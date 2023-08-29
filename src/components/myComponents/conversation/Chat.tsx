@@ -41,7 +41,7 @@ type ChatMessageProps = OpenAI.Chat.CompletionCreateParams["messages"][0];
 function ChatMessage({ content, role }: ChatMessageProps) {
   const user = useUser();
   return (
-    <div className="flex space-x-4 items-start max-w-[75ch] p-4 py-8 border rounded-md">
+    <div className="flex space-x-4 items-start max-w-[75ch] p-4 py-8 border rounded-md overflow-x-auto">
       <Avatar>
         <AvatarImage
           src={role === "user" ? user.user?.imageUrl : "/logo.png"}
@@ -52,21 +52,21 @@ function ChatMessage({ content, role }: ChatMessageProps) {
       <div>
         <ReactMarkdown
           components={{
-            pre: ({ node, lang, children, ...props }) => {
+            pre: ({ node, lang, children, key, ...props }) => {
               console.log({
                 node,
                 children,
                 lang,
               });
               return (
-                <div className="bg-gray-800 p-4 rounded-md overflow-x-auto w-full text-white my-2">
-                  <pre {...props}>
+                <div className="bg-gray-800 p-4 rounded-md w-full text-white my-2 max-w-[65ch] overflow-x-auto">
+                  <pre className="" {...props}>
                     <code className={`language-${lang}`}>{children}</code>
                   </pre>
                 </div>
               );
             },
-            code: ({ node, inline, lang, children, ...props }) => {
+            code: ({ node, inline, lang, children, key, ...props }) => {
               return (
                 <code
                   className="bg-black/10 rounded-lg text-red-400 p-1"
@@ -76,8 +76,10 @@ function ChatMessage({ content, role }: ChatMessageProps) {
                 </code>
               );
             },
-            p: ({ node, children, ...props }) => {
-              return <p className="mb-4 leading-[150%]">{children}</p>;
+            p: ({ node, children, key, ...props }) => {
+              return (
+                <p className="mb-4 leading-[150%] max-w-[60ch]">{children}</p>
+              );
             },
           }}
         >

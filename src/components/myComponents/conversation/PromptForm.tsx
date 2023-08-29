@@ -12,6 +12,8 @@ import { OpenAI } from "openai";
 import { API, fetcher } from "@/lib/fetcher";
 import Chat from "./Chat";
 import Loader from "../Loader";
+import { useRouter } from "next/navigation";
+import { useProModalStore } from "@/lib/useProModal";
 
 type FormData = z.infer<typeof formSchema>;
 
@@ -20,7 +22,9 @@ interface Props {
 }
 
 const PromptForm = ({ forPage = "conversation" }: Props) => {
+  const router = useRouter();
   const [loading, setLoading] = React.useState(false);
+  const { closeModal, isOpen, openModal } = useProModalStore();
   const [messages, setMessages] = React.useState<
     OpenAI.Chat.CompletionCreateParams["messages"]
   >([]);
@@ -40,39 +44,45 @@ const PromptForm = ({ forPage = "conversation" }: Props) => {
     ];
     setMessages(newMessages);
     console.log(data);
+    try {
+      if (forPage === "code") {
+        const aiResponse = await fetcher({
+          url: API.CODE,
+          body: { messages: newMessages },
+          method: "POST",
+        });
+        setMessages([
+          ...newMessages,
+          {
+            content: aiResponse.response,
+            role: "system",
+          },
+        ]);
+      }
 
-    if (forPage === "code") {
-      const aiResponse = await fetcher({
-        url: API.CODE,
-        body: { messages: newMessages },
-        method: "POST",
-      });
-      setMessages([
-        ...newMessages,
-        {
-          content: aiResponse.response,
-          role: "system",
-        },
-      ]);
+      if (forPage === "conversation") {
+        const aiResponse = await fetcher({
+          url: API.CONVERSATION,
+          body: { messages: newMessages },
+          method: "POST",
+        });
+        setMessages([
+          ...newMessages,
+          {
+            content: aiResponse.response,
+            role: "system",
+          },
+        ]);
+      }
+    } catch (e) {
+      console.log(e);
+      openModal();
     }
 
-    if (forPage === "conversation") {
-      const aiResponse = await fetcher({
-        url: API.CONVERSATION,
-        body: { messages: newMessages },
-        method: "POST",
-      });
-      setMessages([
-        ...newMessages,
-        {
-          content: aiResponse.response,
-          role: "system",
-        },
-      ]);
-    }
     // console.log(aiResponse);
     setLoading(false);
     form.reset();
+    router.refresh();
   };
 
   return (

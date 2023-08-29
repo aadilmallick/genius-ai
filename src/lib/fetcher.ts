@@ -6,6 +6,7 @@ export enum API {
   IMAGE = "/api/image",
   MUSIC = "/api/music",
   VIDEO = "/api/video",
+  PAY = "/api/pay",
 }
 
 export interface RequestBodyTypes {
@@ -43,6 +44,9 @@ export interface ResponseTypes {
   };
   [API.VIDEO]: {
     response: string;
+  };
+  [API.PAY]: {
+    url: string;
   };
 }
 
@@ -112,6 +116,18 @@ export async function fetcher({
   body: RequestBodyTypes[API.IMAGE];
   json?: boolean;
 }): Promise<ResponseTypes[API.IMAGE]>;
+
+export async function fetcher({
+  url,
+  method = "GET",
+  body = null,
+  json,
+}: {
+  url: API.PAY;
+  method: "GET";
+  body?: null;
+  json?: boolean;
+}): Promise<ResponseTypes[API.PAY]>;
 
 export async function fetcher({
   url,

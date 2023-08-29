@@ -14,12 +14,14 @@ import Loader from "../Loader";
 import Image from "next/image";
 import OptionsList from "../OptionsList";
 import ImageGallery from "./ImageGallery";
+import { useProModalStore } from "@/lib/useProModal";
 
 type FormData = z.infer<typeof formSchema>;
 
 const ImageForm = () => {
   const [loading, setLoading] = React.useState(false);
   const [images, setImages] = React.useState<string[]>([]);
+  const { closeModal, isOpen, openModal } = useProModalStore();
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -33,16 +35,20 @@ const ImageForm = () => {
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     console.log(data);
-    const res = await fetcher({
-      method: "POST",
-      url: API.IMAGE,
-      body: {
-        prompt: data.prompt,
-        amount: data.amount,
-        resolution: data.resolution,
-      },
-    });
-    setImages(res.response);
+    try {
+      const res = await fetcher({
+        method: "POST",
+        url: API.IMAGE,
+        body: {
+          prompt: data.prompt,
+          amount: data.amount,
+          resolution: data.resolution,
+        },
+      });
+      setImages(res.response);
+    } catch (e) {
+      openModal();
+    }
     setLoading(false);
     form.reset();
   };

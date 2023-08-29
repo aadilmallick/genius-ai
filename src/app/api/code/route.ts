@@ -3,6 +3,12 @@ import { OpenAI } from "openai";
 import { auth } from "@clerk/nextjs";
 import { API, RequestBodyTypes, ResponseTypes } from "@/lib/fetcher";
 import { ChatCompletionMessage } from "openai/resources/chat";
+import {
+  checkApiLimit,
+  checkFreeTrial,
+  increaseApiLimit,
+  userIsSubscribed,
+} from "@/lib/api-limit";
 
 const openAi = new OpenAI({
   apiKey: process.env.OPENAI_KEY,
@@ -19,6 +25,22 @@ export async function POST(req: NextRequest) {
 
   if (!userId) {
     return new NextResponse("Unauthorized", { status: 401 });
+  }
+
+  const freeTrial = await checkApiLimit();
+  if (!freeTrial) {
+    return new NextResponse(
+      JSON.stringify({
+        message: "You have exceeded your free trial limit.",
+      }),
+      {
+        status: 403,
+      }
+    );
+  }
+  const isPro = await userIsSubscribed();
+  if (!isPro) {
+    await increaseApiLimit();
   }
 
   const response = await openAi.chat.completions.create({
