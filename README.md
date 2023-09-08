@@ -1,5 +1,47 @@
 # ShadCN UI
 
+- [ShadCN UI](#shadcn-ui)
+  - [Tailwind Merge](#tailwind-merge)
+  - [Components](#components)
+    - [Card component](#card-component)
+    - [Form component](#form-component)
+    - [Icons](#icons)
+- [Clerk](#clerk)
+  - [`<UserButton />`](#userbutton-)
+  - [`auth()`](#auth)
+  - [`currentUser()`](#currentuser)
+  - [`getAuth()`](#getauth)
+- [Zod and React Hook Form](#zod-and-react-hook-form)
+  - [Installation](#installation)
+  - [Creating a Zod Schema](#creating-a-zod-schema)
+  - [Creating a base type](#creating-a-base-type)
+  - [Setting up react hook form](#setting-up-react-hook-form)
+  - [All together](#all-together)
+- [Fetcher anatomy](#fetcher-anatomy)
+  - [Typing](#typing)
+- [OpenAI API](#openai-api)
+  - [Setup](#setup)
+  - [Chat conversation](#chat-conversation)
+    - [Messages](#messages)
+  - [Image](#image)
+- [Replicate AI](#replicate-ai)
+- [Prisma and mongoose](#prisma-and-mongoose)
+  - [Setup](#setup-1)
+- [API limit for free users](#api-limit-for-free-users)
+  - [Logic](#logic)
+  - [Zustand store](#zustand-store)
+- [Stripe](#stripe)
+  - [Setup](#setup-2)
+  - [Checkout logic](#checkout-logic)
+  - [Creating a checkout link](#creating-a-checkout-link)
+  - [Managing subscriptions with the billing portal](#managing-subscriptions-with-the-billing-portal)
+  - [Stripe webhooks](#stripe-webhooks)
+    - [Testing webhooks locally](#testing-webhooks-locally)
+    - [Code](#code)
+  - [Handling user subscription logic](#handling-user-subscription-logic)
+- [Other](#other)
+  - [Handling mount errors](#handling-mount-errors)
+
 ```bash
 npx shadcn-ui@latest init
 ```
@@ -567,6 +609,367 @@ npm i -D @prisma/client
 npx prisma init
 ```
 
+2. Create a mongodb atlas database and get the connection string. Make sure to specify a database name in the connection string. Add it to the env
+3. Have your schema prisma like this:
+
+```prisma
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+```
+
+4. Create the Schema
+
+```prisma
+model UserApiLimit {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique
+  count Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+```
+
+For mongodb, we need to map ids to the `_id` field, like so:
+
+```prisma
+id String @id @default(auto()) @map("_id") @db.ObjectId
+```
+
+# API limit for free users
+
+## Logic
+
+On each API request, before running the openAI model, create/update a prisma object for the user representing a `UserApiLimit`, and keep track of the current free generations with a `count` property on the document.
+
+When the `count` on a user api limit document surpasses the max limit on free generations we set, we return a 400 server error.
+
+We then catch the server error and use a state-management library called Zustand to open a Pro Modal that prompts the user to upgrade their account.
+
+## Zustand store
+
+```typescript
+import { create } from "zustand";
+
+// 1. create an interface for type safety
+interface useProModalStore {
+  isOpen: boolean;
+  closeModal: () => void;
+  openModal: () => void;
+}
+// 2. create a store, and pass our interface as the generic type
+// 3. Use the set function as a generic setter, where you can pass in state changes
+export const useProModalStore = create<useProModalStore>((set) => ({
+  isOpen: false,
+  closeModal: () => set({ isOpen: false }),
+  openModal: () => set({ isOpen: true }),
+}));
+```
+
 # Stripe
 
-https://dashboard.stripe.com/test/settings/billing/portal
+## Setup
+
+Follow these steps:
+
+1. Go to stripe dashboard and set your dashboard to **test mode**.
+2. Copy your publishable key and secret key from stripe into your env variables
+3. Do `npm i stripe`
+4. Create a stripe instance so you can use the stripe SDK
+
+```javascript
+import Stripe from "stripe";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2023-08-16",
+  typescript: true,
+});
+
+export default stripe;
+```
+
+## Checkout logic
+
+1. User clicks on the upgrade button
+2. Request the `/api/pay` route in our server
+3. We check if the user already has a subscription by using Prisma.
+   - If not, we create a checkout session with stripe, create products, generate a stripe checkout link and redirect the user to the checkout page.
+   - If yes, we create a billing portal with stripe which allows the user to manage their subscription.
+4. We return a response with the generated stripe URL, whether it's a checkout link or a billing portal link.
+
+## Creating a checkout link
+
+To create a checkout page with stripe, we need the following information:
+
+- The link to redirect to when the purchase is complete successfully. (We'll just do the dashboard)
+- The link to redirect to when the purchase is cancelled. (We'll just do the dashboard)
+- Any products and the price associated with it
+
+Here is the way we get the redirect link:
+
+```javascript
+const localUrl = "http://localhost:3000";
+const productionUrl = process.env.NEXT_PUBLIC_URL;
+const serverUrl =
+  process.env.NODE_ENV === "production" ? productionUrl : localUrl;
+```
+
+When in developer mode, we can create products in the strip dashboard and use their `price_id` to refer to the products we created.
+
+Regardless, we will use the `stripe.checkout.sessions.create()` method to generate a checkout stripe session.
+
+But we can also create products programmatically, which is what we do below:
+
+```javascript
+const stripeSession = await stripe.checkout.sessions.create({
+  success_url: `${serverUrl}/dashboard`,
+  cancel_url: `${serverUrl}/dashboard`,
+  payment_method_types: ["card", "paypal"],
+  billing_address_collection: "auto",
+  customer_email: session.user?.emailAddresses[0].emailAddress,
+  line_items: [
+    {
+      price_data: {
+        currency: "USD",
+        product_data: {
+          name: "Genius AI Subscription",
+          description: "Genius AI Pro Subscription",
+        },
+        unit_amount: 2000,
+        recurring: {
+          interval: "month",
+        },
+      },
+      quantity: 1,
+    },
+  ],
+  metadata: {
+    userId: session.userId,
+  },
+  mode: "subscription",
+});
+```
+
+- `success_url` : the url to redirect to when the purchase is successful
+- `cancel_url` : the url to redirect to when the purchase is cancelled
+- `mode` : the mode of the checkout session, which can be `payment` for one-time purchases or `subscription`
+- `payment_method_types` : the payment methods that are allowed. Here it's credit card and paypal
+- `customer_email` : the email of the customer
+- `metadata` : any metadata you want to add to the checkout session. Here we want to pass the user id for integration with our prisma database.
+- `line_items` : the products to purchase. Here we only have one product, but we can have multiple products. Each product has a `price_data` object, which has the following properties:
+  - `currency` : the currency of the product
+  - `product_data` : the product data, which has the following properties:
+    - `name` : the name of the product
+    - `description` : the description of the product
+  - `unit_amount` : the price of the product in cents
+  - `recurring` : the recurring object, which has the following properties:
+    - `interval` : the interval of the subscription, which can be `day`, `week`, `month`, `year`
+
+The checkout session page url is now on the `stripeSession.url` property, which we return as the server's response
+
+```javascript
+return new NextResponse(JSON.stringify({ url: stripeSession.url }));
+```
+
+## Managing subscriptions with the billing portal
+
+We see if the user in our database already has a subscription by using prisma. If they do, we create a billing portal session with stripe for them to manage their subscription, and return the portal url to the billing portal session.
+
+```javascript
+export async function GET(req: NextRequest) {
+  // find user subscription in our database
+  const userSub = await prisma.userSubscription.findUnique({
+    where: {
+      userId: session.userId,
+    },
+  });
+
+  // if user subscription already exists, create a billing portal session to manage subscription
+  if (userSub && userSub.stripeCustomerId) {
+    const stripeSession = await stripe.billingPortal.sessions.create({
+      customer: userSub.stripeCustomerId,
+      return_url: `${serverUrl}/dashboard`,
+    });
+
+    return new NextResponse(JSON.stringify({ url: stripeSession.url }));
+  }
+}
+```
+
+```javascript
+const stripeSession = await stripe.billingPortal.sessions.create({
+  customer: userSub.stripeCustomerId,
+  return_url: `${serverUrl}/dashboard`,
+});
+```
+
+The `stripe.billlingPortal.sessions.create()` method creates a billing portal, returning an object with the link of the billing portal. It takes in an object with the following properties:
+
+- `customer` : the stripe customer id
+- `return_url` : the url to redirect to when the user is done managing their subscription
+
+You can then access the billing portal URL with `stripeSession.url`
+
+When in production, make sure to enable the billing portal by going to https://dashboard.stripe.com/test/settings/billing/portal
+
+## Stripe webhooks
+
+Stripe webhooks are used to run some logic immediately after a user pays or uses stripe on your website. This is good for automatically running logic and database calls related to user subscriptions.
+
+### Testing webhooks locally
+
+First install the stripe CLI. I already did this for you. You're welcome, me from the future.
+
+1. Login with stripe using `stripe login`
+2. Start the stripe webhook listener with `stripe listen --forward-to localhost:3000/<webhook-route-here>`.
+   - I defined my webhook route as `/api/stripe/webhook`, so I would run `stripe listen --forward-to localhost:3000/api/stripe/webhook`
+3. Running the command spits out a webhook secret. Copy the webhook signing secret and add it to your env variables
+4. Your webhook should no be up and running.
+
+### Code
+
+The webhook route should be a POST request handler, which gets back information from `req.text()` body.
+
+1. Get the request body text and the `stripe-signature` header, which are used to construct information about the stripe event:
+
+```javascript
+const body = await req.text();
+const signature = req.headers.get("stripe-signature")!;
+```
+
+2. Construct a stripe event
+3. Based on the event type, run different logic.
+4. Return a 200 response with a null body to acknowledge receipt of the event.
+
+```javascript
+import stripe from "@/lib/StripeInstance";
+import { prisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
+
+export async function POST(req: NextRequest) {
+  // 1. get stripe data
+  const body = await req.text();
+  const signature = req.headers.get("stripe-signature")!;
+  let event: Stripe.Event;
+  try {
+    // 2. create stripe event
+    event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+  } catch (err) {
+    console.log(err);
+    return new NextResponse("Webhook Error", { status: 400 });
+  }
+
+  const session = event.data.object as Stripe.Checkout.Session;
+
+  // Payment is successful and the subscription is created.
+  if (event.type === "checkout.session.completed") {
+    // Fulfill the purchase...
+    const subscription = await stripe.subscriptions.retrieve(
+      session.subscription as string
+    );
+
+    // an unauthorized user without a userId tried checking out something. We can't have that.
+    if (!session.metadata?.userId) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    await prisma.userSubscription.create({
+      data: {
+        userId: session.metadata.userId,
+        stripeCustomerId: session.customer as string,
+        stripeSubscriptionId: subscription.id as string,
+        stripePriceId: subscription.items.data[0].price.id,
+        stripeCurrentPeriodEnd: new Date(
+          subscription.current_period_end * 1000
+        ),
+      },
+    });
+  }
+
+  // when the new billing interval for the subscription succeeds
+  if (event.type === "invoice.payment_succeeded") {
+    const subscription = await stripe.subscriptions.retrieve(
+      session.subscription as string
+    );
+
+    await prisma.userSubscription.update({
+      where: {
+        stripeSubscriptionId: subscription.id as string,
+      },
+      data: {
+        stripeCurrentPeriodEnd: new Date(
+          subscription.current_period_end * 1000
+        ),
+        stripePriceId: subscription.items.data[0].price.id,
+      },
+    });
+  }
+
+  // return empty 200 response to acknowledge receipt of the event
+  return new NextResponse(null, { status: 200 });
+}
+```
+
+## Handling user subscription logic
+
+If the user is subscribed, we do not want to limit their access. The first thing we can do is create a helper function that tells us whether the current user is subscribed or not.
+
+```javascript
+export async function userIsSubscribed() {
+  const { userId } = auth();
+  if (!userId) return false;
+
+  const userSub = await prisma.userSubscription.findUnique({
+    where: {
+      userId,
+    },
+    select: {
+      stripeCustomerId: true,
+      stripeCurrentPeriodEnd: true,
+      stripeSubscriptionId: true,
+    },
+  });
+
+  if (!userSub) return false;
+
+  // if the end period date is in the future, the user has an active subscription
+  if (userSub.stripeCurrentPeriodEnd! > new Date(Date.now())) return true;
+
+  return false;
+}
+```
+
+Then in each of our openAI route handlers, only increase the api limit count if the user is not subscribed:
+
+```javascript
+const isPro = await userIsSubscribed();
+if (!isPro) {
+  await increaseApiLimit();
+}
+```
+
+# Other
+
+## Handling mount errors
+
+```javascript
+const [isMounted, setIsMounted] = useState(true);
+
+useEffect(() => {
+  // Cleanup function to set isMounted to false when component unmounts
+  setIsMounted(true);
+  return () => {
+    setIsMounted(false);
+  };
+}, []);
+
+if (!isMounted) {
+  return null;
+}
+```

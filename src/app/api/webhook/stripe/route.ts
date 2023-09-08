@@ -4,11 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
 export async function POST(req: NextRequest) {
-  //   const { userId } = auth();
-  //   if (!userId) {
-  //     return new NextResponse("Unauthorized", { status: 401 });
-  //   }
-
   const body = await req.text();
   const signature = req.headers.get("stripe-signature")!;
   let event: Stripe.Event;
@@ -71,3 +66,15 @@ export async function POST(req: NextRequest) {
   // return empty 200 response to acknowledge receipt of the event
   return new NextResponse(null, { status: 200 });
 }
+
+// TODO: possibly add cors headers
+// export async function GET(request: Request) {
+//   return new Response('Hello, Next.js!', {
+//     status: 200,
+//     headers: {
+//       'Access-Control-Allow-Origin': '*',
+//       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+//       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+//     }
+//   });
+// }

@@ -5,6 +5,8 @@ import stripe from "@/lib/StripeInstance";
 import { API, ResponseTypes } from "@/lib/fetcher";
 const localUrl = "http://localhost:3000";
 const productionUrl = process.env.NEXT_PUBLIC_URL;
+const serverUrl =
+  process.env.NODE_ENV === "production" ? productionUrl : localUrl;
 
 export async function GET(req: NextRequest) {
   const session = auth();
@@ -22,9 +24,7 @@ export async function GET(req: NextRequest) {
   if (userSub && userSub.stripeCustomerId) {
     const stripeSession = await stripe.billingPortal.sessions.create({
       customer: userSub.stripeCustomerId,
-      return_url: `${
-        process.env.NODE_ENV === "production" ? productionUrl : localUrl
-      }/dashboard`,
+      return_url: `${serverUrl}/dashboard`,
     });
 
     return new NextResponse(JSON.stringify({ url: stripeSession.url }));

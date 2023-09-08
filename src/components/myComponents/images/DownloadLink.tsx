@@ -17,21 +17,21 @@ async function convertURLToFile(url: string) {
 const DownloadLink = ({ image }: { image: string }) => {
   const [downloadLink, setDownloadLink] = React.useState<string>("");
 
-  useEffect(() => {
-    async function bruh() {
-      const url = await convertURLToFile(image);
-      setDownloadLink(url);
-    }
+  // useEffect(() => {
+  //   async function bruh() {
+  //     const url = await convertURLToFile(image);
+  //     setDownloadLink(url);
+  //   }
 
-    bruh();
+  //   bruh();
 
-    return () => {
-      URL.revokeObjectURL(downloadLink);
-    };
-  }, [image]);
+  //   return () => {
+  //     URL.revokeObjectURL(downloadLink);
+  //   };
+  // }, []);
 
   return (
-    <a href={downloadLink || "#"} download="generatedimg.jpg">
+    <a href={downloadLink || image} download="generatedimg.jpg">
       <DownloadIcon
         width={32}
         height={32}
